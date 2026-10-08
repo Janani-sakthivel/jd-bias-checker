@@ -1,2 +1,3 @@
 # jd-bias-checker
 Rule-based tool that flags biased or exclusionary wording in job descriptions, with a score, colour-coded highlights and an AI rewrite prompt. Built with HTML, CSS and JavaScript
+A web tool that checks job descriptions for wording that may put candidates off. It highlights masculine-coded words, age-related terms, hype words like "rockstar", gendered terms and heavy experience requirements, then gives a simple score and explains each flag. It also generates a ready-made prompt so any AI chatbot can rewrite the text more fairly. Built with HTML, CSS and JavaScript, using regex pattern matching and word lists based on published research. Deployed on GitHub Pages.
