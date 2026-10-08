@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JD Bias Checker</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f6f8fa;--card:#fff;--ink:#16202b;--mute:#5b6b7b;--line:#d9e0e7;--accent:#0b6e6e;
+--masc:#ffd9a8;--fem:#e6cdf5;--age:#bfe3ff;--hype:#ffc9c9;--abil:#cdeccf;--gen:#fff3a3;--exp:#ffd1ea}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f161d;--card:#18222c;--ink:#e8eef4;--mute:#9aabbb;--line:#2b3947;--accent:#4fd1c5;
+--masc:#6b4a1f;--fem:#4d3560;--age:#1f4c6e;--hype:#6e2b2b;--abil:#2b5530;--gen:#625a1c;--exp:#6a2a52}}
+:root[data-theme="dark"]{--bg:#0f161d;--card:#18222c;--ink:#e8eef4;--mute:#9aabbb;--line:#2b3947;--accent:#4fd1c5;
+--masc:#6b4a1f;--fem:#4d3560;--age:#1f4c6e;--hype:#6e2b2b;--abil:#2b5530;--gen:#625a1c;--exp:#6a2a52}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font:700 1.9rem/1.15 "Iowan Old Style",Georgia,serif;margin:0 0 6px}
+h2{font:600 1.05rem/1.3 "Iowan Old Style",Georgia,serif;margin:0 0 10px}
+p.sub{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+textarea{width:100%;min-height:170px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg);color:var(--ink);font:inherit}
+textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+button{font:inherit;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:9px 14px;border-radius:8px;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent)}
+:root:not([data-theme="light"]) button{color:#06201f}
+.score{display:flex;align-items:baseline;gap:10px}
+.num{font:700 3rem/1 "Iowan Old Style",Georgia,serif}
+.good{color:#1a7f37}.mid{color:#b26a00}.bad{color:#c62828}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .good{color:#6fdc8c}:root:not([data-theme="light"]) .mid{color:#ffb454}:root:not([data-theme="light"]) .bad{color:#ff7b7b}}
+.hl{white-space:pre-wrap;word-wrap:break-word}
+mark{color:inherit;border-radius:3px;padding:0 2px}
+.masc{background:var(--masc)}.fem{background:var(--fem)}.age{background:var(--age)}.hype{background:var(--hype)}.abil{background:var(--abil)}.gen{background:var(--gen)}.exp{background:var(--exp)}
+.bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line);margin:8px 0 4px}
+.bar span{display:block}
+.small{font-size:.88rem;color:var(--mute)}
+.find{padding:10px 0;border-top:1px solid var(--line)}.find:first-child{border-top:0}
+.find b{font-weight:600}
+textarea.prompt{min-height:120px;font-size:.85rem}
+.empty{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>JD Bias Checker</h1>
+<p class="sub">Paste a job description. See which words may put off some candidates, and why.</p>
+
+<div class="card">
+  <textarea id="jd" placeholder="Paste a job description here..." aria-label="Job description"></textarea>
+  <div class="row">
+    <button id="go">Check for bias</button>
+    <button class="ghost" id="sample">Try a sample</button>
+    <button class="ghost" id="clear">Clear</button>
+  </div>
+</div>
+
+<div id="out" class="card empty">Results will show up here after you check a job description.</div>
+
+<div id="aiBox" class="card" hidden>
+  <h2>Get a fairer rewrite with any AI chatbot</h2>
+  <p class="small">This tool finds the problems. Paste this prompt into Claude, Gemini or ChatGPT to rewrite the text.</p>
+  <textarea id="prompt" class="prompt" readonly aria-label="Rewrite prompt"></textarea>
+  <div class="row"><button id="copy">Copy prompt</button></div>
+</div>
+
+<p class="small">This is a rule-based starter checker built on word lists from published research on gendered wording in job ads. It flags wording to review, not proof of bias, so use your judgement.</p>
+</main>
+
+<script>
+// ---- 1. RULES: each category has regex patterns, a label and a tip ----
+const RULES = {
+  masc:{label:"Masculine-coded",penalty:true,
+    p:["aggressiv\\w*","ambitio\\w*","assertiv\\w*","competitiv\\w*","dominan\\w*","dominat\\w*","fearless","decisive","outspoken","hard-?charging","work hard,? play hard","killer"],
+    tip:"Studies link this kind of wording to fewer women applying. Try: motivated, proactive, collaborative."},
+  fem:{label:"Feminine-coded",penalty:false,
+    p:["nurtur\\w*","supportive","sympathetic","affectionate","gentle","warm","caring","interpersonal"],
+    tip:"Not a problem by itself. It is shown so you can check the balance against masculine-coded words."},
+  age:{label:"Age-related",penalty:true,
+    p:["young","youthful","digital natives?","recent grad\\w*","high[- ]energy","energetic","fresh","mature","overqualified"],
+    tip:"Can signal an age preference and may be unlawful in some places. Describe the skill or the task instead."},
+  hype:{label:"Hype words",penalty:true,
+    p:["rock ?stars?","ninjas?","gurus?","wizards?","superstars?","unicorns?"],
+    tip:"Vague and off-putting to many candidates. Name the actual skill or level you need."},
+  abil:{label:"Exclusionary",penalty:true,
+    p:["able-bodied","native (?:english )?speakers?","clean[- ]cut","culture fit","must be able to stand","digital native"],
+    tip:"May exclude people for reasons unrelated to the job. State the real requirement (e.g. 'fluent in English')."},
+  gen:{label:"Gendered terms",penalty:true,
+    p:["manpower","salesman","salesmen","chairman","foreman","guys","workmanship","he/she"],
+    tip:"Use neutral words: workforce, salesperson, chair, supervisor, team, craftsmanship, they."},
+  exp:{label:"Heavy experience ask",penalty:true,
+    p:["(?:[7-9]|\\d{2})\\+?\\s*years?"],
+    tip:"Very high experience asks can shut out strong candidates. Check it matches the real level of the role."}
+};
+
+// ---- 2. FIND MATCHES in the text ----
+function analyze(text){
+  let hits=[];
+  for(const [key,r] of Object.entries(RULES)){
+    for(const p of r.p){
+      const re=new RegExp("\\b(?:"+p+")(?![\\w])","gi"); let m;
+      while((m=re.exec(text))) hits.push({s:m.index,e:m.index+m[0].length,w:m[0],k:key});
+    }
+  }
+  hits.sort((a,b)=>a.s-b.s||b.e-a.e);
+  const clean=[];let end=-1;               // drop overlapping matches
+  for(const h of hits){ if(h.s>=end){clean.push(h);end=h.e;} }
+  return clean;
+}
+
+// ---- 3. SCORE: start at 100, lose 7 per flagged phrase (feminine-coded words are not penalised) ----
+function score(hits){
+  const n=hits.filter(h=>RULES[h.k].penalty).length;
+  return Math.max(0,100-n*7);
+}
+
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const text=document.getElementById("jd").value;
+  const out=document.getElementById("out"), aiBox=document.getElementById("aiBox");
+  if(!text.trim()){out.className="card empty";out.textContent="Paste a job description first.";aiBox.hidden=true;return;}
+  const hits=analyze(text), sc=score(hits);
+  const cls=sc>=85?"good":sc>=60?"mid":"bad";
+  const verdict=sc>=85?"Looks fairly inclusive":sc>=60?"A few things to tweak":"Worth rewriting";
+
+  // highlighted text
+  let html="",pos=0;
+  for(const h of hits){html+=esc(text.slice(pos,h.s))+'<mark class="'+h.k+'" title="'+RULES[h.k].label+'">'+esc(text.slice(h.s,h.e))+"</mark>";pos=h.e;}
+  html+=esc(text.slice(pos));
+
+  // masculine vs feminine balance
+  const m=hits.filter(h=>h.k==="masc").length,f=hits.filter(h=>h.k==="fem").length,t=m+f;
+  const bal=t?'<div class="bar" role="img" aria-label="Masculine-coded '+m+', feminine-coded '+f+'"><span style="width:'+(m/t*100)+'%;background:var(--masc)"></span><span style="width:'+(f/t*100)+'%;background:var(--fem)"></span></div><div class="small">Masculine-coded: '+m+' | Feminine-coded: '+f+'</div>':'<div class="small">No gender-coded words found.</div>';
+
+  // grouped findings
+  const seen={};hits.forEach(h=>{const id=h.k+"|"+h.w.toLowerCase();seen[id]=seen[id]||{k:h.k,w:h.w,c:0};seen[id].c++;});
+  const finds=Object.values(seen).map(x=>'<div class="find"><mark class="'+x.k+'">'+esc(x.w)+'</mark> <span class="small">x'+x.c+' | '+RULES[x.k].label+'</span><div>'+RULES[x.k].tip+'</div></div>').join("")||'<div class="empty">Nothing flagged. Still read it once as a candidate would.</div>';
+
+  out.className="card";
+  out.innerHTML='<div class="score"><span class="num '+cls+'">'+sc+'</span><span><b>'+verdict+'</b><br><span class="small">'+hits.length+' phrase(s) flagged in '+text.trim().split(/\s+/).length+' words</span></span></div>'+
+    bal+'<h2 style="margin-top:16px">Your text, marked up</h2><div class="hl">'+html+'</div><h2 style="margin-top:16px">What was flagged and why</h2>'+finds;
+
+  // AI rewrite prompt
+  const words=[...new Set(hits.filter(h=>RULES[h.k].penalty).map(h=>h.w.toLowerCase()))];
+  document.getElementById("prompt").value="Rewrite this job description so it is inclusive and clear, without changing the real requirements of the role."+
+    (words.length?" Pay special attention to these flagged words and phrases: "+words.join(", ")+".":"")+
+    " Keep the same structure, explain each change in one line, and keep the tone natural.\n\n---\n"+text;
+  aiBox.hidden=false;
+}
+
+document.getElementById("go").onclick=render;
+document.getElementById("clear").onclick=()=>{document.getElementById("jd").value="";render();};
+document.getElementById("sample").onclick=()=>{
+  document.getElementById("jd").value="We are looking for a young, energetic rockstar to join our fast-growing team. The ideal candidate is aggressive, competitive and a true ninja at data analysis, with 10+ years of experience. Must be a native English speaker and a good culture fit. You will manage our manpower planning and work with the guys in sales. We also value someone warm and supportive.";
+  render();
+};
+document.getElementById("copy").onclick=()=>{
+  const ta=document.getElementById("prompt"),b=document.getElementById("copy");
+  ta.select();
+  try{navigator.clipboard.writeText(ta.value).then(()=>{b.textContent="Copied";}).catch(()=>{document.execCommand("copy");b.textContent="Copied";});}
+  catch(e){try{document.execCommand("copy");b.textContent="Copied";}catch(_){b.textContent="Select and copy manually";}}
+  setTimeout(()=>{b.textContent="Copy prompt";},1800);
+};
+</script>
+</body>
+</html>
